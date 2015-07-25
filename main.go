@@ -13,12 +13,14 @@ import (
 
 var letters = []rune("1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
+// Redirecting the short url to the long url
 func Redirect(w http.ResponseWriter, req *http.Request) {
 	k := req.URL.Query().Get(":shorturl")
 	v := read(k)
 	http.Redirect(w, req, "http://"+v, http.StatusFound)
 }
 
+// Generates a short url and stores it to the database
 func Shorten(w http.ResponseWriter, req *http.Request) {
 	val := req.URL.Query().Get(":longurl")
 	key := generateKey()
