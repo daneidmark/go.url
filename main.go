@@ -13,15 +13,13 @@ import (
 
 var letters = []rune("1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-// Redirecting the short url to the long url
-func Redirect(w http.ResponseWriter, req *http.Request) {
+func redirect(w http.ResponseWriter, req *http.Request) {
 	k := req.URL.Query().Get(":shorturl")
 	v := read(k)
 	http.Redirect(w, req, "http://"+v, http.StatusFound)
 }
 
-// Generates a short url and stores it to the database
-func Shorten(w http.ResponseWriter, req *http.Request) {
+func shorten(w http.ResponseWriter, req *http.Request) {
 	val := req.URL.Query().Get(":longurl")
 	key := generateKey()
 	store(key, val)
@@ -52,23 +50,21 @@ func store(k string, v string) {
 }
 
 func setupDatabase() {
-	err := riak.ConnectClient("127.0.0.1:8087")
-	if err != nil {
+	if err := riak.ConnectClient("127.0.0.1:8087"); err != nil {
 		fmt.Println("Cannot connect, is Riak running?")
 		return
 	}
+	riak.NewBucket("urls")
 }
 
 func setupRest() {
 	m := pat.New()
-	m.Get("/:shorturl", http.HandlerFunc(Redirect))
-	m.Post("/:longurl", http.HandlerFunc(Shorten))
+	m.Get("/:shorturl", http.HandlerFunc(redirect))
+	m.Post("/:longurl", http.HandlerFunc(shorten))
 	http.Handle("/", m)
-	err := http.ListenAndServe(":12345", nil)
-	if err != nil {
+	if err := http.ListenAndServe(":12345", nil); err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
-	riak.NewBucket("urls")
 }
 
 func main() {
