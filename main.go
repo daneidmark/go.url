@@ -13,18 +13,42 @@ import (
 
 var letters = []rune("1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-func redirect(w http.ResponseWriter, req *http.Request) {
-	k := req.URL.Query().Get(":shorturl")
-	v := read(k)
-	http.Redirect(w, req, "http://"+v, http.StatusFound)
+type Database interface {
+	Store(k string, v string)
+	Read(k string) (v string)
 }
 
-func shorten(w http.ResponseWriter, req *http.Request) {
-	val := req.URL.Query().Get(":longurl")
-	key := generateKey()
-	store(key, val)
-	// goal: go.url/s23Fs
-	io.WriteString(w, "localhost:12345/"+key)
+type RiakDatabase struct{}
+
+func (r RiakDatabase) Store(k string, v string) {
+	obj, _ := riak.NewObjectIn("urls", k)
+	obj.ContentType = "text/plain"
+	obj.Data = []byte(v)
+	obj.Store()
+}
+
+func (r RiakDatabase) Read(k string) (v string) {
+	obj, _ := riak.GetFrom("urls", k)
+	v = string(obj.Data)
+	return v
+}
+
+func redirectHandler(db Database) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		k := r.URL.Query().Get(":shorturl")
+		v := db.Read(k)
+		http.Redirect(w, r, "http://"+v, http.StatusFound)
+	})
+}
+
+func shortenHandler(db Database) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		val := r.URL.Query().Get(":longurl")
+		key := generateKey()
+		db.Store(key, val)
+		// goal: go.url/s23Fs
+		io.WriteString(w, "localhost:12345/"+key)
+	})
 }
 
 func generateKey() (k string) {
@@ -36,38 +60,22 @@ func generateKey() (k string) {
 	return string(b)
 }
 
-func read(k string) (v string) {
-	obj, _ := riak.GetFrom("urls", k)
-	v = string(obj.Data)
-	return v
-}
-
-func store(k string, v string) {
-	obj, _ := riak.NewObjectIn("urls", k)
-	obj.ContentType = "text/plain"
-	obj.Data = []byte(v)
-	obj.Store()
-}
-
-func setupDatabase() {
+func newDatabase() Database {
 	if err := riak.ConnectClient("127.0.0.1:8087"); err != nil {
 		fmt.Println("Cannot connect, is Riak running?")
-		return
 	}
+
 	riak.NewBucket("urls")
+	return RiakDatabase{}
 }
 
-func setupRest() {
+func main() {
 	m := pat.New()
-	m.Get("/:shorturl", http.HandlerFunc(redirect))
-	m.Post("/:longurl", http.HandlerFunc(shorten))
+	db := newDatabase()
+	m.Get("/:shorturl", redirectHandler(db))
+	m.Post("/:longurl", shortenHandler(db))
 	http.Handle("/", m)
 	if err := http.ListenAndServe(":12345", nil); err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
-}
-
-func main() {
-	setupDatabase()
-	setupRest()
 }
